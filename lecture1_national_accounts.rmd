@@ -1,0 +1,317 @@
+
+```{r}
+
+library(tidyverse)
+
+library(readxl)
+
+library(Quandl)
+
+Quandl.api_key(Sys.getenv("Q_key"))
+
+```
+
+```{r download_data_fron_quandl, eval=FALSE}
+
+countries_df = read_csv(paste0(Sys.getenv("USERPROFILE"),
+                            "\\OneDrive - Bank Of Israel\\Data",
+                            "\\IMF\\iso_country_codes.csv"),
+                        col_names = c("country_code","country_name"),
+                        show_col_types = FALSE)
+
+codes_df = tribble(
+  ~indicator_name,~indicator_code,
+  "gdp_pc_nominal_lcu","NGDPPC",
+  "gdp_pc_real_lcu","NGDPRPC",
+  "gdp_pc_nominal_usd","NGDPDPC",
+  "gdp_total_nominal_lcu", "NGDP",
+  "gdp_total_real_lcu", "NGDP_R",
+  "gdp_total_nominal_usd", "NGDPD"
+)
+
+gdp_df = countries_df %>% 
+  crossing(codes_df) %>% 
+  pmap(.f = function(country_code,country_name,
+                     indicator_name,indicator_code){
+    
+    quandl_string = paste0("ODA/",country_code, "_", indicator_code)
+    
+    print(quandl_string)
+    
+    temp_df = tryCatch(Quandl(quandl_string,type = "raw"),
+                       error = function(e){return(NULL)})
+    
+    if(!is.null(temp_df)){
+      
+      temp_df = temp_df %>% 
+      rename_all(tolower) %>% 
+      mutate(country = country_name) %>% 
+      mutate(code = country_code) %>% 
+      mutate(indicator = indicator_name)
+      
+      
+    }
+    
+    return(temp_df)
+ 
+  })
+
+
+gdp_df = gdp_df[!map_lgl(gdp_df, is.null)]
+
+gdp_df = gdp_df %>% 
+  bind_rows()
+
+gdp_df = gdp_df %>% 
+  mutate(indicator = str_remove_all(indicator, "gdp_")) %>% 
+  separate(indicator,
+           into = c("population", "deflator","currency"),
+           sep = "_")
+
+
+rm(countries_df,codes_df)
+```
+
+
+```{r import_data}
+
+
+gdp_df = read_csv(paste0(Sys.getenv("USERPROFILE"),
+                               "\\OneDrive - Bank Of Israel\\Data",
+                               "\\IMF\\gdp\\countries_gdp.csv"),
+                  show_col_types = FALSE)
+
+# maddison_df = read_xlsx(paste0(Sys.getenv("USERPROFILE"),
+#                                "\\OneDrive - Bank Of Israel\\Data",
+#                                "\\Maddison\\mpd2020.xlsx"),
+#                         sheet = "Full data")
+
+```
+
+
+
+# Plots
+
+## Israel GDP
+
+```{r plot_world_gdp, eval=FALSE}
+
+maddison_df %>% 
+  mutate(gdp = gdppc * pop) %>% 
+  # mutate(gdp = gdp * 10 ^ - 9) %>% 
+  filter(country == "Israel") %>% 
+  summarise(gdp = sum(gdp, na.rm = TRUE),
+            .by = year) %>% 
+
+  ggplot(aes(year, gdp)) + 
+  geom_line()
+
+maddison_df %>% 
+  filter(country == "Israel")
+  
+
+```
+
+```{r israel_gdp_plot}
+
+israel_gdp_plot = gdp_df %>% 
+  filter(country == "Israel") %>% 
+  filter(year(date) >= 1995) %>% 
+  filter(year(date) < year(Sys.Date())) %>%
+  filter(population == "total") %>% 
+  filter(currency == "lcu") %>% 
+  filter(deflator == "nominal") %>% 
+  ggplot(aes(x = as_factor(year(date)), y = value)) +
+  geom_col() + 
+  scale_y_continuous(labels = scales::comma_format()) + 
+  xlab(NULL) + ylab(NULL) + ggtitle("Israel GDP (billions of ILS)") + 
+  theme(axis.text.x = element_text(angle = 90,vjust = 0.5))
+
+
+
+ggsave_for_presentation(plot_object = israel_gdp_plot,
+       file_path = paste0("C:\\Users\\Home",
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\lesson 1 images",
+                         "\\israel_gdp_plot.png"))
+
+
+```
+
+```{r israel_gdp_real_plot}
+
+price_converter = gdp_df %>% 
+  filter(country == "Israel") %>% 
+  filter(year(date) == 1995) %>% 
+  filter(population == "total") %>% 
+  filter(currency == "lcu") %>% 
+  select(deflator, value)
+
+price_converter = price_converter$value[price_converter$deflator == "real"] /
+  price_converter$value[price_converter$deflator == "nominal"]
+
+
+israel_gdp_real_plot = gdp_df %>% 
+  filter(country == "Israel") %>% 
+  filter(year(date) >= 1995) %>% 
+  filter(year(date) < year(Sys.Date())) %>%
+  filter(population == "total") %>% 
+  filter(currency == "lcu") %>% 
+  select(-c(population, currency,country,code)) %>%
+  mutate(value = if_else(deflator == "real",
+                         value / price_converter, value)) %>%
+  pivot_wider(names_from = deflator) %>% 
+  mutate(nominal = nominal - real) %>% 
+  pivot_longer(-date, names_to = "deflator") %>% 
+  ggplot(aes(x = as_factor(year(date)), y = value, fill = deflator)) +
+  geom_col() + 
+  scale_fill_manual(values = c("lightblue", "gray30")) +
+  scale_y_continuous(labels = scales::comma_format()) + 
+  xlab(NULL) + ylab(NULL) + ggtitle("Israel GDP (billions of ILS)") + 
+  theme(axis.text.x = element_text(angle = 90,vjust = 0.5))
+
+
+rm(price_converter)
+
+
+
+ggsave_for_presentation(plot_object = israel_gdp_real_plot,
+       file_path = paste0("C:\\Users\\Home",
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\lesson 1 images",
+                         "\\israel_gdp_real_plot.png"))
+
+
+```
+
+```{r israel_gdp_changes_plot}
+
+changes_df = gdp_df %>%
+  filter(country == "Israel") %>%
+  filter(year(date) >= 1995) %>%
+  filter(year(date) < year(Sys.Date())) %>%
+  filter(population == "pc") %>%
+  group_by(deflator, currency) %>%
+  arrange(date) %>%
+  mutate(diff = value / lag(value) - 1) %>%
+  ungroup() %>% 
+  mutate(indicator = case_when(
+    deflator == "nominal" & currency == "usd" ~ "USD",
+    deflator == "nominal" & currency == "lcu" ~ "Nominal",
+    deflator == "real" & currency == "lcu" ~ "Real")) %>% 
+  mutate(year = year(date)) %>% 
+  select(year, diff, indicator)
+
+
+israel_gdp_changes_plot = changes_df %>% 
+  ggplot(aes(x = as_factor(year),y = diff,fill = (diff > 0))) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  facet_wrap(~ indicator,ncol = 1) +
+  xlab(NULL) + ylab(NULL) + ggtitle("Changes in Israel GDP per capita") + 
+  theme(axis.text.x = element_text(size = 12))
+
+rm(changes_df)
+
+
+ggsave_for_presentation(plot_object = israel_gdp_changes_plot,
+       file_path = paste0("C:\\Users\\Home",
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\lesson 1 images",
+                         "\\israel_gdp_changes_plot.png"))
+
+
+```
+
+## International comparison
+
+```{r top_15_usd_gdp_plot}
+
+top_15_usd_gdp_plot = gdp_df %>% 
+  filter(currency == "usd") %>% 
+  filter(population == "total") %>% 
+  mutate(date = year(date)) %>% 
+  filter(date >= 2015 & date <= 2019) %>% 
+  group_by(country, code) %>% 
+  summarise(avg_gdp = mean(value, na.rm = TRUE), .groups = "drop") %>% 
+  slice_max(order_by = avg_gdp, n = 15) %>% 
+  ggplot(aes(avg_gdp, reorder(country, avg_gdp))) + 
+  geom_col() + 
+  scale_x_continuous(labels = scales::dollar_format(scale = 10 ^ -3)) + 
+  xlab("USD trillions") + ylab(NULL) + 
+  ggtitle("GDP - top 15 countries (2015 - 2019) average")
+
+
+ggsave_for_presentation(plot_object = top_15_usd_gdp_plot,
+       file_path = paste0("C:\\Users\\Home",
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\lesson 1 images",
+                         "\\top_15_usd_gdp_plot.png"))
+
+
+```
+
+```{r top_7_dynamics_plot}
+
+top_7_countries = gdp_df %>% 
+  filter(population == "total") %>% 
+  filter(currency == "usd") %>% 
+  mutate(year = year(date)) %>% 
+  filter(year <= 2019 & year >= 2015) %>% 
+  summarise(value = mean(value), .by = "country") %>% 
+  slice_max(order_by = value,n = 7) %>% 
+  select(country)
+
+top_7_dynamics_plot = gdp_df %>% 
+  filter(population == "total") %>% 
+  filter(currency == "usd") %>% 
+  inner_join(top_7_countries) %>% 
+  mutate(transparency = if_else(country %in% c("United States", "China", "India"),
+                                "full","half")) %>% 
+  ggplot(aes(date, value, color = country)) + 
+  geom_line(aes(alpha = transparency), linewidth = 0.8) +
+  geom_point(aes(alpha = transparency)) + 
+  scale_y_continuous(labels = scales::dollar_format(scale = 10 ^ -3)) + 
+  scale_alpha_manual(guide = "none",values = c("full" = 1, "half" = 0.3)) + 
+  scale_color_brewer(type = "qual",palette = "Dark2") + 
+  xlab(NULL) + ylab("Trillions USD") + 
+  ggtitle("Top 7 countries by GDP  - China has grown rapidly and is cathing up to US")
+
+rm(top_7_countries)
+
+
+ggsave_for_presentation(plot_object = top_7_dynamics_plot,
+       file_path = paste0("C:\\Users\\Home",
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\lesson 1 images",
+                         "\\top_7_dynamics_plot.png"))
+
+
+```
+
+```{r world_gdp}
+
+world_gdp = read_csv(paste0(Sys.getenv("USERPROFILE"),
+                            "\\OneDrive - Bank Of Israel\\Data",
+                            "\\World Bank\\gdp",
+                            "\\world_gdp_constant_usd_2015.csv"),
+                     show_col_types = FALSE)
+
+world_gdp %>% 
+  mutate(year = as.numeric(str_extract(year,"\\d{4}"))) %>% 
+  arrange(year) %>% 
+  mutate(diff = world_gdp / dplyr::lag(world_gdp) - 1) %>% 
+  filter(complete.cases(.)) %>% 
+  ggplot(aes(year, diff)) + 
+  geom_col(aes(fill = diff >= mean(diff)), show.legend = FALSE) + 
+  geom_hline(aes(yintercept = mean(diff))) + 
+  scale_y_continuous(labels = scales::percent_format()) + 
+  xlab(NULL) + ylab(NULL) + ggtitle("Changes in World GDP")
+
+```
+
