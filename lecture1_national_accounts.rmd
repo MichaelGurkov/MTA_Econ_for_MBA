@@ -1,84 +1,69 @@
 
-```{r}
+```{r load_libraries}
 
 library(tidyverse)
 
 library(readxl)
 
-library(Quandl)
-
-Quandl.api_key(Sys.getenv("Q_key"))
-
 ```
 
-```{r download_data_fron_quandl, eval=FALSE}
-
-countries_df = read_csv(paste0(Sys.getenv("USERPROFILE"),
-                            "\\OneDrive - Bank Of Israel\\Data",
-                            "\\IMF\\iso_country_codes.csv"),
-                        col_names = c("country_code","country_name"),
-                        show_col_types = FALSE)
+```{r process_quandl_df, eval=FALSE}
 
 codes_df = tribble(
-  ~indicator_name,~indicator_code,
-  "gdp_pc_nominal_lcu","NGDPPC",
-  "gdp_pc_real_lcu","NGDPRPC",
-  "gdp_pc_nominal_usd","NGDPDPC",
-  "gdp_total_nominal_lcu", "NGDP",
-  "gdp_total_real_lcu", "NGDP_R",
-  "gdp_total_nominal_usd", "NGDPD"
+~indicator_name,~indicator_code,
+"gdp_pc_nominal_lcu","NGDPPC",
+"gdp_pc_real_lcu","NGDPRPC",
+"gdp_pc_nominal_usd","NGDPDPC",
+"gdp_total_nominal_lcu", "NGDP",
+"gdp_total_real_lcu", "NGDP_R",
+"gdp_total_nominal_usd", "NGDPD"
 )
 
-gdp_df = countries_df %>% 
-  crossing(codes_df) %>% 
-  pmap(.f = function(country_code,country_name,
-                     indicator_name,indicator_code){
-    
-    quandl_string = paste0("ODA/",country_code, "_", indicator_code)
-    
-    print(quandl_string)
-    
-    temp_df = tryCatch(Quandl(quandl_string,type = "raw"),
-                       error = function(e){return(NULL)})
-    
-    if(!is.null(temp_df)){
-      
-      temp_df = temp_df %>% 
-      rename_all(tolower) %>% 
-      mutate(country = country_name) %>% 
-      mutate(code = country_code) %>% 
-      mutate(indicator = indicator_name)
-      
-      
-    }
-    
-    return(temp_df)
- 
-  })
+countries_table = read_csv(paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Data\\IMF",
+                         "\\imf_country_codes.csv"))
 
-
-gdp_df = gdp_df[!map_lgl(gdp_df, is.null)]
-
-gdp_df = gdp_df %>% 
-  bind_rows()
-
-gdp_df = gdp_df %>% 
-  mutate(indicator = str_remove_all(indicator, "gdp_")) %>% 
-  separate(indicator,
-           into = c("population", "deflator","currency"),
-           sep = "_")
-
-
-rm(countries_df,codes_df)
-```
-
-
-```{r import_data}
-
+oecd_classification = read_csv(paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Data\\IMF",
+                         "\\country_codes.csv")) %>% 
+  select(-country_imf_name)
 
 gdp_df = read_csv(paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Data\\IMF",
+                         "\\IMF_data_from_quandl_15_12_2023.csv"),
+                  show_col_types = FALSE) %>% 
+  separate_wider_delim(indicator,"_",
+                       names = c("code","indicator_code"),
+                       too_many = "merge") %>% 
+  inner_join(countries_table, by = "code") %>% 
+  inner_join(codes_df, by = "indicator_code") %>% 
+  left_join(oecd_classification, by = "code")
+
+gdp_df = gdp_df %>% 
+  select(-c(indicator_code, code)) %>% 
+  mutate(indicator_name = str_remove(indicator_name, "gdp_")) %>% 
+  separate_wider_delim(indicator_name, "_",
+                       names = c("population", "deflator", "currency")) %>% 
+  rename(country = country_name) %>% 
+  mutate(country = str_replace_all(country," ","_")) %>% 
+  mutate(across(c("oecd_member", "euro_member"), ~replace_na(.,0))) %>% 
+  relocate(value,.after = last_col())
+
+gdp_df %>% 
+  write_csv(here::here("data", "gdp_df.csv"))
+
+rm(codes_df, countries_table, oecd_classification)
+
+```
+
+```{r import_gdp_data}
+
+gdp_df_old = read_csv(paste0(Sys.getenv("USERPROFILE"),
                                "\\OneDrive - Bank Of Israel\\Data",
                                "\\IMF\\gdp\\countries_gdp.csv"),
+                  show_col_types = FALSE)
+
+gdp_df = read_csv(here::here("data", "gdp_df.csv"),
                   show_col_types = FALSE)
 
 # maddison_df = read_xlsx(paste0(Sys.getenv("USERPROFILE"),
@@ -87,8 +72,6 @@ gdp_df = read_csv(paste0(Sys.getenv("USERPROFILE"),
 #                         sheet = "Full data")
 
 ```
-
-
 
 # Plots
 
@@ -130,7 +113,7 @@ israel_gdp_plot = gdp_df %>%
 
 
 ggsave_for_presentation(plot_object = israel_gdp_plot,
-       file_path = paste0("C:\\Users\\Home",
+       file_path = paste0(Sys.getenv("USERPROFILE"),
                          "\\OneDrive - Bank Of Israel\\Teaching",
                          "\\MTA\\MBA\\Economics for Business Administration",
                          "\\Lectures\\lesson 1 images",
@@ -158,7 +141,7 @@ israel_gdp_real_plot = gdp_df %>%
   filter(year(date) < year(Sys.Date())) %>%
   filter(population == "total") %>% 
   filter(currency == "lcu") %>% 
-  select(-c(population, currency,country,code)) %>%
+  select(date,deflator, value) %>%
   mutate(value = if_else(deflator == "real",
                          value / price_converter, value)) %>%
   pivot_wider(names_from = deflator) %>% 
@@ -177,7 +160,7 @@ rm(price_converter)
 
 
 ggsave_for_presentation(plot_object = israel_gdp_real_plot,
-       file_path = paste0("C:\\Users\\Home",
+       file_path = paste0(Sys.getenv("USERPROFILE"),
                          "\\OneDrive - Bank Of Israel\\Teaching",
                          "\\MTA\\MBA\\Economics for Business Administration",
                          "\\Lectures\\lesson 1 images",
@@ -235,9 +218,10 @@ top_15_usd_gdp_plot = gdp_df %>%
   filter(population == "total") %>% 
   mutate(date = year(date)) %>% 
   filter(date >= 2015 & date <= 2019) %>% 
-  group_by(country, code) %>% 
+  group_by(country) %>% 
   summarise(avg_gdp = mean(value, na.rm = TRUE), .groups = "drop") %>% 
   slice_max(order_by = avg_gdp, n = 15) %>% 
+  mutate(country = str_replace(country, "_", " ")) %>% 
   ggplot(aes(avg_gdp, reorder(country, avg_gdp))) + 
   geom_col() + 
   scale_x_continuous(labels = scales::dollar_format(scale = 10 ^ -3)) + 
@@ -270,7 +254,8 @@ top_7_dynamics_plot = gdp_df %>%
   filter(population == "total") %>% 
   filter(currency == "usd") %>% 
   inner_join(top_7_countries) %>% 
-  mutate(transparency = if_else(country %in% c("United States", "China", "India"),
+  mutate(transparency = if_else(country %in% c("United States",
+                                               "China", "India"),
                                 "full","half")) %>% 
   ggplot(aes(date, value, color = country)) + 
   geom_line(aes(alpha = transparency), linewidth = 0.8) +
@@ -279,7 +264,8 @@ top_7_dynamics_plot = gdp_df %>%
   scale_alpha_manual(guide = "none",values = c("full" = 1, "half" = 0.3)) + 
   scale_color_brewer(type = "qual",palette = "Dark2") + 
   xlab(NULL) + ylab("Trillions USD") + 
-  ggtitle("Top 7 countries by GDP  - China has grown rapidly and is cathing up to US")
+  ggtitle(paste0("Top 7 countries by GDP  - China",
+                 " has grown rapidly and is cathing up to US"))
 
 rm(top_7_countries)
 
@@ -293,6 +279,50 @@ ggsave_for_presentation(plot_object = top_7_dynamics_plot,
 
 
 ```
+
+
+```{r gdp_pc_histogram}
+
+gdp_hist_plot = gdp_df %>% 
+  filter(currency == "usd") %>% 
+  filter(population == "pc") %>% 
+  filter(year(date) >= 2000 & year(date) <= 2019) %>% 
+  summarise(value = mean(value, na.rm = TRUE), .by = "country") %>% 
+  ggplot(aes(value)) + 
+  geom_histogram() + 
+  scale_x_continuous(labels = scales::dollar_format()) + 
+  xlab(NULL) + ylab(NULL) + 
+  ggtitle("Distribution of GDP per capita (2000-2019 average, USD)")
+
+```
+
+
+```{r gdp_pc_income_groups}
+
+gdp_df %>% 
+  filter(currency == "usd") %>% 
+  filter(population == "pc") %>% 
+  filter(year(date) >= 2000 & year(date) <= 2019) %>% 
+  summarise(value = mean(value, na.rm = TRUE), .by = "country") %>% 
+  mutate(country = str_replace_all(country, "_", " ")) %>% 
+  mutate(value = value  * 10 ^ -3) %>% 
+  mutate(income_group = case_when(value <= 5 ~ "Poor",
+                                  value <= 25 ~ "Middle",
+                                  value > 25 ~ "Rich")) %>% 
+  mutate(income_group = factor(income_group,
+                               levels = c("Rich", "Middle", "Poor"))) %>% 
+  ggplot(aes(x = value,
+             y = tidytext::reorder_within(country, value, income_group))) + 
+  geom_col() + 
+  tidytext::scale_y_reordered() + 
+  facet_wrap(~income_group, scales = "free") + 
+  xlab(NULL) + ylab(NULL) + 
+  ggtitle("Distribution of GDP per capita (2000-2019 average, USD)") + 
+  theme(axis.text.y = element_text(size = 9))
+
+```
+
+
 
 ```{r world_gdp}
 
