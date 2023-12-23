@@ -1,0 +1,302 @@
+```{r load_libraries}
+
+library(tidyverse)
+
+library(MiscImport)
+
+library(ggrepel)
+
+```
+
+
+```{r import_inf_data}
+
+cpi_df = import_bis_cpi_index(
+  paste0(file.path(Sys.getenv("USERPROFILE")),
+    "\\OneDrive - Bank Of Israel\\Data",
+    "\\BIS\\cpi\\WS_LONG_CPI_csv_col.csv"),
+  my_frequency = "Annual",
+  my_unit_of_measure = "Index, 2010 = 100",
+  pivot_to_long = TRUE)
+
+inf_df = cpi_df  %>% 
+  rename(year = date) %>%
+  group_by(country) %>% 
+  arrange(year) %>% 
+  mutate(inf = (cpi / lag(cpi) - 1) * 100) %>% 
+  ungroup(country) %>% 
+  select(-cpi) %>% 
+  filter(complete.cases(.))
+
+target_inf_df = read_csv(
+  paste0(
+    Sys.getenv("USERPROFILE"),
+    "\\OneDrive - Bank Of Israel\\Data",
+    "\\inflation\\israel_inf_target_df.csv"
+  ),
+  col_types = "cdd"
+)
+
+
+```
+
+
+```{r import_policy_rate_data}
+
+rates_df = import_bis_policy_rates(
+  paste0(file.path(Sys.getenv("USERPROFILE")),
+    "\\OneDrive - Bank Of Israel\\Data",
+    "\\BIS\\policy_rates\\WS_CBPOL_M_csv_col.csv"))
+
+```
+
+
+
+# Inflation before the stabilization plan
+
+```{r plot_inf_1951_1970, eval=FALSE}
+
+inf_df %>% 
+  filter(country == "Israel") %>% 
+  filter(year <= 1970) %>% 
+  ggplot(aes(x = year, y = inf)) + 
+  geom_col() + 
+  xlab(NULL) + ylab(NULL) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+cpi_df %>% 
+  filter(country == "Israel") %>% 
+  filter(date <= 1970) %>% 
+  mutate(cpi = cpi / cpi[1]) %>% 
+  ggplot(aes(x = date, y = cpi, group = 1)) + 
+  geom_line() + 
+  geom_text_repel(aes(label = ifelse(cpi == max(cpi),round(cpi,2),""))) + 
+  xlab(NULL) + ylab(NULL) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+
+
+```
+
+
+```{r plot_inf_1971_1980, eval=FALSE}
+
+inf_df %>% 
+  filter(country == "Israel") %>%  
+  filter(year > 1970 & year <= 1985) %>% 
+  ggplot(aes(x = year, y = inf)) + 
+  geom_col() + 
+  xlab(NULL) + ylab(NULL) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+cpi_df %>% 
+  filter(country == "Israel") %>% 
+  filter(date <= 1980) %>% 
+  mutate(cpi = cpi / cpi[1]) %>% 
+  ggplot(aes(x = date, y = cpi, group = 1)) + 
+  geom_line() + 
+  geom_text_repel(aes(label = ifelse(cpi == max(cpi),round(cpi,2),""))) + 
+  xlab(NULL) + ylab(NULL) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+
+
+```
+
+
+```{r plot_inf_1981_1985, eval=FALSE}
+
+inf_df %>% 
+  filter(country == "Israel") %>% 
+  filter(year > 1980 & year <= 1985) %>% 
+  ggplot(aes(x = year, y = inf)) + 
+  geom_col() + 
+  xlab(NULL) + ylab(NULL) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+cpi_df %>% 
+  filter(country == "Israel") %>% 
+  filter(date > 1980 & date <= 1985) %>% 
+  mutate(cpi = cpi / cpi[1]) %>% 
+  ggplot(aes(x = date, y = cpi, group = 1)) + 
+  geom_line() + 
+  geom_text_repel(aes(label = ifelse(cpi == max(cpi),round(cpi,2),""))) + 
+  xlab(NULL) + ylab(NULL) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+
+
+```
+
+
+
+# Inflation rates plot
+
+```{r plot_inflation_in_Israel}
+
+overall_inf_plot = inf_df %>% 
+  filter(country == "Israel") %>% 
+  # filter(year >= 1987) %>%
+  ggplot(aes(x = year, y = inf, fill = (inf <= 0))) + 
+  geom_bar(stat = "identity", width = 0.5) +
+  labs(title = "Inflation rates in Israel", x = "", y = "") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1,accuracy = 3)) +
+  scale_fill_manual(values = c("darkblue","red")) +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 10, angle = 90))
+
+
+ggsave_for_presentation(plot_object = overall_inf_plot,
+       file_path = paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\money_and_inflation_images",
+                         "\\overall_inf_plot.png"))
+
+
+disinflation_inf_plot = inf_df %>% 
+  filter(country == "Israel") %>% 
+  filter(year >= 1987) %>%
+  ggplot(aes(x = year, y = inf, fill = (inf <= 0))) + 
+  geom_bar(stat = "identity", width = 0.5) +
+  labs(title = "Inflation rates in Israel", x = "", y = "") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1,accuracy = 3)) +
+  scale_fill_manual(values = c("darkblue","red")) +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 10, angle = 90))
+
+ggsave_for_presentation(plot_object = disinflation_inf_plot,
+       file_path = paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\money_and_inflation_images",
+                         "\\disinflation_inf_plot.png"))
+
+
+```
+
+
+
+```{r plot_inflation_target_in_Israel}
+
+inf_target_plot = inf_df %>% 
+  filter(country == "Israel") %>% 
+  filter(year >= 1992) %>% 
+  left_join(target_inf_df, by = "year") %>% 
+  mutate(in_range = (inf >= target_low & inf <= target_high)) %>% 
+  ggplot(aes(x = as.character(year), y = inf, color = in_range)) + 
+  geom_errorbar(aes(x = as.character(year),ymin = target_low,
+                    ymax = target_high), color = "lightblue", size = 1) + 
+  geom_point(show.legend = FALSE, size = 2) +
+  geom_hline(yintercept = 0, lty = "dashed") + 
+  labs(title = "Inflation targeting in Israel", x = "", y = "") +
+  scale_y_continuous(labels = scales::percent_format(
+    scale = 1,accuracy = 3)) + 
+  theme(axis.text.x = element_text(size = 12))
+
+
+ggsave_for_presentation(plot_object = inf_target_plot,
+       file_path = paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\money_and_inflation_images",
+                         "\\inf_target_plot.png"))
+
+
+
+```
+
+
+
+
+```{r inflation_heatmap}
+
+heatmap_df = inf_df %>% 
+  filter(as.numeric(year) >= 1980) %>%
+  filter(!country == "Euro_area") %>% 
+  mutate(inflation_category = case_when(inf < 0 ~"deflation",
+                               inf < 5 ~ "less than 5%",
+                               inf < 15 ~ "between 5% and 15%",
+                               TRUE ~ "above 15%")) %>% 
+  mutate(inflation_category = factor(inflation_category,
+                                     levels = c("deflation",
+                                                "less than 5%",
+                                                "between 5% and 15%",
+                                                "above 15%"))) %>% 
+  mutate(country = str_replace_all(country,"_"," ")) %>% 
+  group_by(country) %>% 
+  mutate(avg_inflation = mean(inf)) %>% 
+  ungroup()
+
+heatmap_plot = heatmap_df %>% 
+ ggplot(aes(year, reorder(country, avg_inflation))) + 
+  geom_point(aes(color = inflation_category), size = 2) + 
+  scale_color_manual(values = c("deflation" = "lightblue",
+                                "less than 5%" = "gray",
+                                "between 5% and 15%" = "orange",
+                                "above 15%" = "red")) +
+  xlab(NULL) + ylab(NULL) + 
+  ggtitle("Inflation status in selected countries") + 
+  theme(axis.text = element_text(size = 8),
+        legend.text = element_text(size = 10),
+        legend.title = element_blank())
+
+
+ggsave_for_presentation(plot_object = heatmap_plot,
+       file_path = paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\money_and_inflation_images",
+                         "\\heatmap_plot.png"))
+
+rm(heatmap_df)
+
+```
+
+
+
+```{r policy_rates}
+
+
+
+policy_rates_plot = rates_df %>% 
+  filter(country %in% c("United_States","Euro_area",
+                        "United_Kingdom","Japan", "Israel")) %>% 
+  filter(as.numeric(date) >= 1980) %>% 
+  ggplot(aes(date, policy_rate)) + 
+  geom_step(aes(color = country), linewidth = 0.7) + 
+  xlab(NULL) + ylab(NULL) + 
+  ggtitle("Policy rates in selected countries (percent points)") + 
+  theme(legend.title = element_blank())
+
+
+ggsave_for_presentation(plot_object = policy_rates_plot,
+       file_path = paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\money_and_inflation_images",
+                         "\\policy_rates_plot.png"))
+
+
+
+```
+
+```{r israel_policy_rate}
+
+israel_policy_plot = rates_df %>% 
+  filter(country == "Israel") %>% 
+  ggplot(aes(date, policy_rate)) + 
+  geom_step() + 
+  xlab(NULL) + ylab(NULL) + ggtitle("Policy rates in Israel (percent points)")
+
+
+ggsave_for_presentation(plot_object = israel_policy_plot,
+       file_path = paste0(Sys.getenv("USERPROFILE"),
+                         "\\OneDrive - Bank Of Israel\\Teaching",
+                         "\\MTA\\MBA\\Economics for Business Administration",
+                         "\\Lectures\\money_and_inflation_images",
+                         "\\israel_policy_plot.png"))
+
+
+```
+
